@@ -1,0 +1,4 @@
+- name: mm
+  hosts: all
+  roles:
+    - name: mattermost

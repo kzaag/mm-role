@@ -18,7 +18,7 @@
     url: https://download.docker.com/linux/ubuntu/gpg
     state: present
 
-# this magic is used so i can set UBUNTU_CODENAME and access correct docker repository
+# this is done so i can set UBUNTU_CODENAME and access correct docker repository
 - name: set codename
   register: codename
   command: /bin/bash -c "grep UBUNTU_CODENAME /etc/os-release | sed s/UBUNTU_CODENAME=//g"
@@ -70,7 +70,7 @@
 
 - name: copy env
   become: true
-  ansible.builtin.copy:
+  ansible.builtin.template:
     src: .env
     dest: /home/mattermost/repo/.env
     owner: mattermost
