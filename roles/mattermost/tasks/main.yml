@@ -1,0 +1,125 @@
+- name: packages
+  become: true
+  apt:
+    name: "{{ item }}"
+    state: present
+    update_cache: yes
+  with_items:
+    - apt-transport-https
+    - ca-certificates
+    - curl
+    - software-properties-common
+  tags:
+    - docker
+
+- name: docker key
+  become: true
+  apt_key:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    state: present
+
+# this magic is used so i can set UBUNTU_CODENAME and access correct docker repository
+- name: set codename
+  register: codename
+  command: /bin/bash -c "grep UBUNTU_CODENAME /etc/os-release | sed s/UBUNTU_CODENAME=//g"
+- set_fact:
+    UBUNTU_CODENAME: "{{ codename.stdout }}"
+
+- name: docker repo
+  become: true
+  apt_repository:
+    repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu {{UBUNTU_CODENAME}} stable
+    state: present
+
+- name: docker install
+  become: true
+  apt: 
+    name: "{{ packages }}"
+    state: present
+    update_cache: yes
+  vars:
+    packages:
+    - docker-ce 
+    - docker-ce-cli 
+    - containerd.io
+    - docker-compose
+  notify:
+    - docker-started
+  
+# everything will be placed under /home/mattermost
+- name: setup user
+  become: true
+  ansible.builtin.user:
+    name: mattermost
+    create_home: true
+
+# probably should replace that with fork or release to mantain better stability
+- name: git checkout
+  become: true
+  ansible.builtin.git:
+    repo: 'https://github.com/mattermost/docker'
+    dest: /home/mattermost/repo/
+
+- name: file perm
+  become: true
+  ansible.builtin.file:
+    path: /home/mattermost/repo/
+    owner: mattermost
+    group: mattermost
+    recurse: yes
+
+- name: copy env
+  become: true
+  ansible.builtin.copy:
+    src: .env
+    dest: /home/mattermost/repo/.env
+    owner: mattermost
+    mode: 0600
+
+- name: mm dir structure
+  become: true
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: mattermost
+    mode: 0700
+    recurse: yes
+  loop:
+    - /home/mattermost/repo/volumes/app/mattermost/config
+    - /home/mattermost/repo/volumes/app/mattermost/data
+    - /home/mattermost/repo/volumes/app/mattermost/logs
+    - /home/mattermost/repo/volumes/app/mattermost/plugins
+    - /home/mattermost/repo/volumes/app/mattermost/client/plugins
+    - /home/mattermost/repo/volumes/app/mattermost/bleve-indexes
+
+
+  # these directories will be mounted in mattermost container, 
+  # since it runs under UID=2000 im setting this uid as owner to avoid 'Permission denied's
+- name: mm set owner
+  become: true
+  command: chown 2000:2000 /home/mattermost/repo/volumes/app/mattermost/ -R
+
+- name: db dir structure
+  become: true
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: mattermost
+    mode: 0700
+    recurse: yes
+  loop:
+    - /home/mattermost/repo/volumes/db/var/lib/postgresql/data
+
+  # this uid must match pg uid, for rationale see comment above "mm set owner" its basically the same reason
+- name: db set owner
+  become: true
+  command: chown 70:70 /home/mattermost/repo/volumes/db/ -R
+
+- name: up the containers
+  become: true
+  ansible.builtin.command: >
+    docker-compose 
+        -f docker-compose.yml 
+        -f docker-compose.without-nginx.yml 
+      up -d
+  args:
+    chdir: /home/mattermost/repo
+

@@ -1,0 +1,3 @@
+simple mattermost-docker role for ubuntu, running without reverse proxy or https
+
+see Vagrantfile for tested images
